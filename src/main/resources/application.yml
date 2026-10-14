@@ -1,0 +1,61 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: fraud-detection-service
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    serialization:
+      indent-output: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+
+fraud:
+  rules:
+    rejection-threshold: 70
+    salt: "softpay-secure-production-salt-2026"
+    amount-rule:
+      base-max-amount-eur: 5000.00
+      threat-deduction-factor: 0.90
+      warning-threshold-ratio: 0.70
+    terminal-velocity-rule:
+      window-seconds: 60
+      base-max-tx-per-window: 10
+      threat-deduction-factor: 0.80
+      min-allowed-tx: 2
+      score: 85
+    card-velocity-rule:
+      window-seconds: 60
+      max-tx-per-window: 3
+      score: 90
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    io.softpay.fraud: DEBUG
