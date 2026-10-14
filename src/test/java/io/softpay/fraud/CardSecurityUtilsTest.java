@@ -1,7 +1,7 @@
 package io.softpay.fraud;
 
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.service.CardSecurityUtils;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.utils.CardSecurityUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

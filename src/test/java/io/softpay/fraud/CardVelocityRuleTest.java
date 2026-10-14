@@ -1,11 +1,10 @@
 package io.softpay.fraud;
 
 import io.softpay.fraud.config.FraudRulesProperties;
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.domain.TransactionContext;
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.repository.InMemorySlidingWindowRepository;
-import io.softpay.fraud.repository.TransactionStateRepository;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.records.data.TransactionContext;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.persistence.repository.TransactionStateRepository;
 import io.softpay.fraud.rule.CardVelocityRule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +14,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class CardVelocityRuleTest {
 
@@ -23,7 +26,7 @@ class CardVelocityRuleTest {
 
     @BeforeEach
     void setUp() {
-        stateRepository = new InMemorySlidingWindowRepository();
+        stateRepository = mock(TransactionStateRepository.class);
         FraudRulesProperties properties = new FraudRulesProperties(
                 70,
                 "test-salt",
@@ -40,27 +43,29 @@ class CardVelocityRuleTest {
         String hashedCard = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
         Instant t0 = Instant.parse("2026-10-14T12:00:00Z");
 
-        // Record 2 previous transactions
-        stateRepository.recordTransaction("TERM-001", hashedCard, t0.plusSeconds(5));
-        stateRepository.recordTransaction("TERM-001", hashedCard, t0.plusSeconds(10));
+        // 3rd transaction: count = 2 (< 3) -> passes
+        when(stateRepository.getCardTransactionCount(eq(hashedCard), any(), any()))
+                .thenReturn(2);
 
-        // 3rd transaction evaluated at t0 + 15s (existing count = 2 < 3) -> passes
         TransactionContext ctx3 = createContext(hashedCard, t0.plusSeconds(15));
         RuleEvaluationResult res3 = rule.evaluate(ctx3);
         assertThat(res3.hardReject()).isFalse();
         assertThat(res3.scoreContribution()).isZero();
 
-        // Record 3rd transaction
-        stateRepository.recordTransaction("TERM-001", hashedCard, t0.plusSeconds(15));
+        // 4th transaction: count = 3 (>= 3) -> hard rejection
+        when(stateRepository.getCardTransactionCount(eq(hashedCard), any(), any()))
+                .thenReturn(3);
 
-        // 4th transaction evaluated at t0 + 20s (existing count = 3 >= 3) -> hard rejection
         TransactionContext ctx4 = createContext(hashedCard, t0.plusSeconds(20));
         RuleEvaluationResult res4 = rule.evaluate(ctx4);
         assertThat(res4.hardReject()).isTrue();
         assertThat(res4.scoreContribution()).isEqualTo(90);
         assertThat(res4.reason()).contains("Suspicious card usage frequency");
 
-        // Advance clock past 60s window (t0 + 80s) -> passes cleanly
+        // After window expiry: count = 0 -> passes cleanly
+        when(stateRepository.getCardTransactionCount(eq(hashedCard), any(), any()))
+                .thenReturn(0);
+
         TransactionContext ctxFuture = createContext(hashedCard, t0.plusSeconds(80));
         RuleEvaluationResult resFuture = rule.evaluate(ctxFuture);
         assertThat(resFuture.hardReject()).isFalse();

@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # Polyglot Tier 1: Valkey for Distributed In-Memory Sliding Windows
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: softpay-valkey
+    command: valkey-server --save "" --appendonly no --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - softpay-net
+
+  # Polyglot Tier 2: PostgreSQL for Terminal Master Data & Flyway Migrations
+  postgres:
+    image: postgres:16-alpine
+    container_name: softpay-postgres
+    environment:
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: softpay
+      POSTGRES_PASSWORD: softpay_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U softpay -d fraud_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - softpay-net
+
+  # Softpay Fraud Detection Service
+  fraud-detection-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: softpay-fraud-service
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: fraud_db
+      DB_USER: softpay
+      DB_PASSWORD: softpay_secret
+    ports:
+      - "8080:8080"
+    depends_on:
+      valkey:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - softpay-net
+
+volumes:
+  postgres_data:
+
+networks:
+  softpay-net:
+    driver: bridge

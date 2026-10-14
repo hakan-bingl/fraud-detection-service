@@ -1,4 +1,4 @@
-package io.softpay.fraud.domain;
+package io.softpay.fraud.model.records.data;
 
 public record RuleEvaluationResult(
     String ruleName,

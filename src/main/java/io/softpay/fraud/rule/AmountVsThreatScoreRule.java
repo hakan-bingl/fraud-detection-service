@@ -1,8 +1,8 @@
 package io.softpay.fraud.rule;
 
 import io.softpay.fraud.config.FraudRulesProperties;
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.domain.TransactionContext;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.records.data.TransactionContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -30,7 +30,8 @@ public class AmountVsThreatScoreRule implements FraudRule {
     public RuleEvaluationResult evaluate(TransactionContext context) {
         FraudRulesProperties.AmountRuleProperties props = properties.amountRule();
         int threatScore = context.request().terminalThreatScore();
-        BigDecimal amountEur = context.amountEur();
+        BigDecimal amount = context.amount();
+        String currency = context.request().currency();
 
         // MaxAllowedAmount = baseMaxAmount * (1 - (threatScore / 100) * threatDeductionFactor)
         double threatRatio = (threatScore / 100.0) * props.threatDeductionFactor();
@@ -39,8 +40,8 @@ public class AmountVsThreatScoreRule implements FraudRule {
                 .multiply(BigDecimal.valueOf(multiplier))
                 .setScale(2, RoundingMode.HALF_UP);
 
-        if (amountEur.compareTo(maxAllowedAmount) > 0) {
-            double excess = amountEur.subtract(maxAllowedAmount).doubleValue();
+        if (amount.compareTo(maxAllowedAmount) > 0) {
+            double excess = amount.subtract(maxAllowedAmount).doubleValue();
             double ratio = excess / Math.max(1.0, maxAllowedAmount.doubleValue());
             int score = (int) Math.min(100, Math.round(70 + Math.min(1.0, ratio) * 30));
 
@@ -48,7 +49,7 @@ public class AmountVsThreatScoreRule implements FraudRule {
                     getName(),
                     score,
                     "Amount exceeds allowed threshold for terminal threat score (amount: " +
-                            amountEur + " EUR, limit: " + maxAllowedAmount + " EUR)"
+                            amount + " " + currency + ", limit: " + maxAllowedAmount + " " + currency + ")"
             );
         }
 
@@ -56,9 +57,9 @@ public class AmountVsThreatScoreRule implements FraudRule {
                 .multiply(BigDecimal.valueOf(props.warningThresholdRatio()))
                 .setScale(2, RoundingMode.HALF_UP);
 
-        if (amountEur.compareTo(warningThreshold) >= 0) {
+        if (amount.compareTo(warningThreshold) >= 0) {
             double range = maxAllowedAmount.subtract(warningThreshold).doubleValue();
-            double diff = amountEur.subtract(warningThreshold).doubleValue();
+            double diff = amount.subtract(warningThreshold).doubleValue();
             int score = (range > 0) ? (int) Math.min(50, Math.round(25 + (diff / range) * 25)) : 25;
 
             return RuleEvaluationResult.warning(

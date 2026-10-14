@@ -1,4 +1,4 @@
-package io.softpay.fraud.service;
+package io.softpay.fraud.utils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

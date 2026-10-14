@@ -1,20 +1,27 @@
 package io.softpay.fraud;
 
-import io.softpay.fraud.dto.RejectionStatus;
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.dto.TransactionEvaluationResponse;
+import io.softpay.fraud.model.enums.RejectionStatus;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.model.records.response.TransactionEvaluationResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class FraudDetectionIntegrationTest {
@@ -24,6 +31,18 @@ class FraudDetectionIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @MockBean
+    private StringRedisTemplate redisTemplate;
+
+    @MockBean
+    private ZSetOperations<String, String> zSetOperations;
+
+    @BeforeEach
+    void setUp() {
+        when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.count(anyString(), anyDouble(), anyDouble())).thenReturn(0L);
+    }
 
     @Test
     @DisplayName("End-to-end evaluation: Valid transaction on known active terminal is ALLOWED")

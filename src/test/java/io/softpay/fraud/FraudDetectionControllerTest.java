@@ -3,10 +3,10 @@ package io.softpay.fraud;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.softpay.fraud.controller.FraudDetectionController;
 import io.softpay.fraud.controller.GlobalExceptionHandler;
-import io.softpay.fraud.dto.RejectionStatus;
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.dto.TransactionEvaluationResponse;
-import io.softpay.fraud.service.FraudDetectionService;
+import io.softpay.fraud.model.enums.RejectionStatus;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.model.records.response.TransactionEvaluationResponse;
+import io.softpay.fraud.port.in.FraudDetectionIn;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +36,7 @@ class FraudDetectionControllerTest {
     private ObjectMapper objectMapper;
 
     @MockBean
-    private FraudDetectionService fraudDetectionService;
+    private FraudDetectionIn fraudDetectionIn;
 
     @Test
     @DisplayName("POST /api/v1/fraud/evaluate - 200 OK with ALLOWED decision")
@@ -46,7 +46,7 @@ class FraudDetectionControllerTest {
                 "Transaction approved",
                 0
         );
-        when(fraudDetectionService.evaluate(any())).thenReturn(response);
+        when(fraudDetectionIn.evaluate(any())).thenReturn(response);
 
         TransactionEvaluationRequest request = new TransactionEvaluationRequest(
                 new BigDecimal("150.00"),

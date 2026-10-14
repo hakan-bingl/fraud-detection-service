@@ -1,8 +1,8 @@
 package io.softpay.fraud.controller;
 
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.dto.TransactionEvaluationResponse;
-import io.softpay.fraud.service.FraudDetectionService;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.model.records.response.TransactionEvaluationResponse;
+import io.softpay.fraud.port.in.FraudDetectionIn;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Fraud Detection", description = "Real-Time Payment Fraud Evaluation Engine")
 public class FraudDetectionController {
 
-    private final FraudDetectionService fraudDetectionService;
+    private final FraudDetectionIn fraudDetectionIn;
 
     @Operation(
             summary = "Evaluate Inflight Transaction",
@@ -45,7 +45,7 @@ public class FraudDetectionController {
     })
     @PostMapping(value = "/evaluate", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<TransactionEvaluationResponse> evaluate(@Valid @RequestBody TransactionEvaluationRequest request) {
-        TransactionEvaluationResponse response = fraudDetectionService.evaluate(request);
+        TransactionEvaluationResponse response = fraudDetectionIn.evaluate(request);
         return ResponseEntity.ok(response);
     }
 }

@@ -1,4 +1,4 @@
-package io.softpay.fraud.dto;
+package io.softpay.fraud.model.enums;
 
 public enum RejectionStatus {
     ALLOWED,

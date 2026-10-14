@@ -1,11 +1,10 @@
 package io.softpay.fraud;
 
 import io.softpay.fraud.config.FraudRulesProperties;
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.domain.TransactionContext;
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.repository.InMemorySlidingWindowRepository;
-import io.softpay.fraud.repository.TransactionStateRepository;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.records.data.TransactionContext;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.persistence.repository.TransactionStateRepository;
 import io.softpay.fraud.rule.TerminalVelocityRule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +14,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TerminalVelocityRuleTest {
 
@@ -23,7 +26,7 @@ class TerminalVelocityRuleTest {
 
     @BeforeEach
     void setUp() {
-        stateRepository = new InMemorySlidingWindowRepository();
+        stateRepository = mock(TransactionStateRepository.class);
         FraudRulesProperties properties = new FraudRulesProperties(
                 70,
                 "test-salt",
@@ -38,34 +41,33 @@ class TerminalVelocityRuleTest {
     @DisplayName("Should permit transactions below threat-adjusted velocity limit and reject once breached")
     void testTerminalVelocityBreachAndReset() {
         String terminalId = "TERM-001";
-        // Threat score 50: baseMax 10 * (1 - 0.40) = 6 allowed transactions
-        int threatScore = 50;
+        int threatScore = 50; // max allowed = 6 tx
         Instant t0 = Instant.parse("2026-10-14T12:00:00Z");
 
-        // Simulate 5 previous transactions in the last 20 seconds
-        for (int i = 0; i < 5; i++) {
-            stateRepository.recordTransaction(terminalId, "card-1", t0.plusSeconds(i * 3));
-        }
+        // When 5 transactions in window (< 6 allowed) -> passes
+        when(stateRepository.getTerminalTransactionCount(eq(terminalId), any(), any()))
+                .thenReturn(5);
 
-        // 6th transaction evaluated at t0 + 20s: existing count = 5 (< 6 allowed) -> passes
         TransactionContext context6 = createContext(terminalId, threatScore, t0.plusSeconds(20));
         RuleEvaluationResult result6 = rule.evaluate(context6);
         assertThat(result6.hardReject()).isFalse();
         assertThat(result6.scoreContribution()).isZero();
 
-        // Record the 6th transaction
-        stateRepository.recordTransaction(terminalId, "card-1", t0.plusSeconds(20));
+        // When 6 transactions in window (>= 6 allowed) -> rejected!
+        when(stateRepository.getTerminalTransactionCount(eq(terminalId), any(), any()))
+                .thenReturn(6);
 
-        // 7th transaction evaluated at t0 + 25s: existing count = 6 (>= 6 allowed) -> rejected!
         TransactionContext context7 = createContext(terminalId, threatScore, t0.plusSeconds(25));
         RuleEvaluationResult result7 = rule.evaluate(context7);
         assertThat(result7.hardReject()).isTrue();
         assertThat(result7.scoreContribution()).isEqualTo(85);
         assertThat(result7.reason()).contains("Terminal velocity limit exceeded");
 
-        // Advance clock past the 60-second window (t0 + 90s)
-        Instant tFuture = t0.plusSeconds(90);
-        TransactionContext futureContext = createContext(terminalId, threatScore, tFuture);
+        // When window resets (0 count) -> passes cleanly
+        when(stateRepository.getTerminalTransactionCount(eq(terminalId), any(), any()))
+                .thenReturn(0);
+
+        TransactionContext futureContext = createContext(terminalId, threatScore, t0.plusSeconds(90));
         RuleEvaluationResult futureResult = rule.evaluate(futureContext);
         assertThat(futureResult.hardReject()).isFalse();
         assertThat(futureResult.scoreContribution()).isZero();

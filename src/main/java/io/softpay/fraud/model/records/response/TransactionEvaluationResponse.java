@@ -1,6 +1,7 @@
-package io.softpay.fraud.dto;
+package io.softpay.fraud.model.records.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.softpay.fraud.model.enums.RejectionStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Fraud evaluation outcome")

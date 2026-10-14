@@ -1,43 +1,55 @@
 # Softpay Real-Time Fraud Detection Service
 
-A production-grade, high-throughput, low-latency microservice designed for **Softpay** to evaluate inflight payment transactions in real time. Built with **Spring Boot 3.3**, **Java 21**, **Micrometer/Prometheus**, and **OpenAPI (Swagger)**.
+A production-grade, high-throughput, low-latency microservice designed for **Softpay** to evaluate inflight payment transactions in real time. Built with **Spring Boot 3.3**, **Java 21**, **Micrometer/Prometheus**, **OpenAPI (Swagger)**, and a **Polyglot Persistence Architecture** powered by **Valkey** and **PostgreSQL (Flyway)**.
 
 The service executes an extensible, deterministic pipeline of fraud detection rules under strict sub-10ms latency budgets while adhering to PCI-DSS v4.0 security hygiene (zero raw PAN leakage, PAN masking, and salted SHA-256 tokenization).
 
 ---
 
-## 1. Architecture & Rule Evaluation Pipeline
+## 1. Polyglot Persistence Architecture
 
-The engine employs a hybrid **Strategy + Chain of Responsibility** pattern. Rules are injected as Spring components with deterministic execution order (`@Order`):
+To balance ultra-low latency with strong relational consistency, the service uses a **Polyglot Persistence Model**:
 
 ```mermaid
 flowchart TD
     Client["Payment Gateway / POS"] -->|POST /api/v1/fraud/evaluate| Controller["FraudDetectionController"]
-    Controller -->|CorrelationIdFilter (MDC)| Service["FraudDetectionService"]
+    Controller -->|CorrelationIdFilter| Service["FraudDetectionService"]
     
-    subgraph Rule Pipeline ["Sequential Strategy Execution (@Order)"]
-        Service --> R1["1. UnknownTerminalRule\n(Validates Terminal Registry)"]
-        R1 -->|Passed| R2["2. AmountVsThreatScoreRule\n(Threat-Adjusted Max Amount in EUR)"]
-        R2 -->|Passed| R3["3. TerminalVelocityRule\n(Sliding Window Count vs Threat Score)"]
-        R3 -->|Passed| R4["4. CardVelocityRule\n(Salted SHA-256 PAN Rolling Window)"]
+    subgraph Engine ["Rule Evaluation Pipeline"]
+        Service --> R1["1. UnknownTerminalRule"]
+        R1 --> R2["2. AmountVsThreatScoreRule"]
+        R2 --> R3["3. TerminalVelocityRule"]
+        R3 --> R4["4. CardVelocityRule"]
     end
     
-    R1 -.->|Score / Rejection| Aggregator["Score Aggregator & Decision Engine"]
-    R2 -.->|Score / Rejection| Aggregator
-    R3 -.->|Score / Rejection| Aggregator
-    R4 -.->|Score / Rejection| Aggregator
+    subgraph Polyglot ["Polyglot Persistence Layer"]
+        R1 -.->|Terminal Verification| RelationalStore[("Tier 2: PostgreSQL / Flyway\n(Master Terminals, Merchants, Rules)")]
+        R3 -.->|Atomic ZSET Velocity| ValkeyStore[("Tier 1: Valkey Cluster\n(Sub-1ms Sliding Windows)")]
+        R4 -.->|Card Frequency Window| ValkeyStore
+    end
     
-    Aggregator -->|Metrics: Timer & Counter| Metrics["Micrometer / Prometheus"]
-    Aggregator -->|Update Sliding Window| StateRepo["TransactionStateRepository"]
-    Aggregator -->|200 OK Response| Client
+    Service -->|Metrics: Timer & Counter| Metrics["Micrometer / Prometheus"]
+    Service -->|200 OK Response| Client
 ```
+
+### Persistence Tiers:
+1. **Tier 1 — High-Speed Distributed In-Memory Tier ([Valkey](https://valkey.io/)):**
+   - Implemented via [`ValkeySlidingWindowRepository`](file:///Users/hakanbing/IdeaProjects/Fraud%20Detection%20Service/src/main/java/io/softpay/fraud/repository/ValkeySlidingWindowRepository.java).
+   - Utilizes Redis-compatible **Sorted Sets (`ZSET`)** with epoch timestamps as scores.
+   - Provides sub-millisecond execution ($< 1\text{ms}$) across scaled Kubernetes pods.
+   - Automatic key expiration (`EXPIRE`) and rolling pruning (`ZREMRANGEBYSCORE`) eliminate memory leaks.
+
+2. **Tier 2 — Relational Master Data Tier (PostgreSQL + [Flyway](https://flywaydb.org/)):**
+   - Implemented via [`TerminalDataService`](file:///Users/hakanbing/IdeaProjects/Fraud%20Detection%20Service/src/main/java/io/softpay/fraud/repository/JpaTerminalRepository.java).
+   - Schema versioning managed via Flyway (`V1__create_terminals_table.sql`).
+   - Guarantees ACID compliance and durability for terminal configurations, merchant risk profiles, and audit journals.
 
 ---
 
 ## 2. Fraud Rules Catalogue & Decision Logic
 
 1. **`UnknownTerminalRule` (Order 1)**
-   - Validates whether `terminalId` exists and is `active` in `TerminalRepository`.
+   - Validates whether `terminalId` exists and is `active` in `TerminalDataOut` (backed by PostgreSQL in production or In-Memory in dev/tests).
    - Unknown or suspended terminals immediately trigger a **hard rejection** (`score = 100`, `rejectionStatus = REJECTED`).
 
 2. **`AmountVsThreatScoreRule` (Order 2)**
@@ -48,13 +60,13 @@ flowchart TD
    - If amount is within warning threshold ($\ge 70\%$ of limit), adds moderate warning score (25–50).
 
 3. **`TerminalVelocityRule` (Order 3)**
-   - Evaluates terminal transaction frequency within a rolling 60-second window.
+   - Evaluates terminal transaction frequency within a rolling 60-second window in Valkey / In-Memory.
    - Dynamically scales allowed transaction count based on terminal threat score:
      $$\text{MaxTxInWindow} = \max\left(2, \text{round}\left(\text{baseMaxTxPerWindow} \times \left(1 - \frac{\text{terminalThreatScore}}{100} \times 0.80\right)\right)\right)$$
    - Rejects if transaction count meets or exceeds `MaxTxInWindow` (`score = 85`).
 
 4. **`CardVelocityRule` (Order 4)**
-   - Tracks card usage using a salted `SHA-256` hash in a rolling 60-second window.
+   - Tracks card usage using a salted `SHA-256` hash in a rolling 60-second window in Valkey / In-Memory.
    - If card usage exceeds 3 transactions within 60 seconds, triggers hard rejection (`score = 90`).
 
 ### Decision Criteria
@@ -65,34 +77,35 @@ flowchart TD
 
 ## 3. Quick Start & Execution
 
-### Prerequisites
-- Java 21 or Java 25 installed (`java -version`)
-- Gradle or Maven
+### Option A: Running with Docker Compose (Full Polyglot Stack: Valkey + PostgreSQL + App)
+Spin up Valkey 8, PostgreSQL 16, and the Fraud Service with one command:
+```bash
+docker compose up --build -d
+```
+Verify containers are healthy:
+```bash
+docker compose ps
+```
 
-### Running the Application
-Using Gradle wrapper:
+### Option B: Running Locally with Gradle
 ```bash
 ./gradlew bootRun
 ```
 
-Using Maven:
+### Option C: Running Locally with Maven
 ```bash
 mvn spring-boot:run
 ```
 
-### Running Tests & Code Coverage
-Using Gradle wrapper:
+### Running Test Suites & JaCoCo Coverage
 ```bash
 ./gradlew clean test
 ```
-*(HTML test reports generated under `build/reports/tests/test/index.html` and JaCoCo coverage reports under `build/reports/jacoco/test/html/index.html`)*
+All 10 test suites (including `ValkeySlidingWindowRepositoryTest` and `TerminalDataServiceTest`) run automatically with zero external dependencies using embedded in-memory stores. HTML reports are generated at:
+- Unit & Integration Test Report: `build/reports/tests/test/index.html`
+- JaCoCo Code Coverage Report: `build/reports/jacoco/test/html/index.html`
 
-Using Maven:
-```bash
-mvn clean test
-```
-
-### Interactive Documentation & Health
+### Endpoints & Health
 - **Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 - **OpenAPI JSON**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
 - **Actuator Health**: [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
@@ -149,7 +162,6 @@ curl -X POST http://localhost:8080/api/v1/fraud/evaluate \
 ```
 
 ### 3. Rejected Due to Card Velocity Breach (`REJECTED`)
-After 3 transactions are rapidly submitted for the same card:
 ```bash
 curl -X POST http://localhost:8080/api/v1/fraud/evaluate \
   -H "Content-Type: application/json" \
@@ -204,10 +216,12 @@ curl -X POST http://localhost:8080/api/v1/fraud/evaluate \
 
 ---
 
-## 5. Configuration Reference (`application.yml`)
+## 5. Configuration Reference
 
 | Property | Default Value | Description |
 | :--- | :--- | :--- |
+| `fraud.persistence.sliding-window` | `in-memory` (or `valkey`) | Sliding window store: `valkey` (distributed) or `in-memory` |
+| `fraud.persistence.terminals` | `in-memory` (or `database`) | Terminal registry: `database` (PostgreSQL JPA) or `in-memory` |
 | `fraud.rules.rejection-threshold` | `70` | Composite risk score threshold for rejection |
 | `fraud.rules.salt` | `softpay-secure-production-salt-2026` | Secret salt used for SHA-256 PAN tokenization |
 | `fraud.rules.amount-rule.base-max-amount-eur` | `5000.00` | Baseline maximum allowed transaction amount in EUR |
@@ -227,5 +241,5 @@ curl -X POST http://localhost:8080/api/v1/fraud/evaluate \
 ## 6. Security Hygiene (PCI-DSS v4.0)
 
 - **Zero Plaintext Logging**: Raw PAN numbers are never logged or stored. The `TransactionEvaluationRequest.toString()` method explicitly calls `CardSecurityUtils.maskPan(...)` (`453201******1111`).
-- **Cryptographic Tokenization**: Card velocity tracking uses salted `SHA-256` digests, preventing rainbow table attacks against the finite PAN keyspace ($< 10^{16}$).
+- **Cryptographic Tokenization**: Card velocity tracking uses salted `SHA-256` digests, preventing rainbow table attacks against the finite PAN keyspace ($< 10^{16}$). Plain PANs are never written to Valkey.
 - **Correlation ID Tracking**: All incoming requests receive or propagate an `X-Correlation-ID` header injected into the SLF4J MDC context for complete audit tracing.

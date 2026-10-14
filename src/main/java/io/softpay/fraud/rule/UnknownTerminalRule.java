@@ -1,9 +1,9 @@
 package io.softpay.fraud.rule;
 
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.domain.TransactionContext;
-import io.softpay.fraud.repository.Terminal;
-import io.softpay.fraud.repository.TerminalRepository;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.records.data.TransactionContext;
+import io.softpay.fraud.model.records.data.Terminal;
+import io.softpay.fraud.port.out.TerminalDataOut;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class UnknownTerminalRule implements FraudRule {
 
-    private final TerminalRepository terminalRepository;
+    private final TerminalDataOut terminalDataOut;
 
     @Override
     public String getName() {
@@ -29,7 +29,7 @@ public class UnknownTerminalRule implements FraudRule {
     @Override
     public RuleEvaluationResult evaluate(TransactionContext context) {
         String terminalId = context.request().terminalId();
-        Optional<Terminal> terminal = terminalRepository.findByTerminalId(terminalId);
+        Optional<Terminal> terminal = terminalDataOut.findByTerminalId(terminalId);
 
         if (terminal.isEmpty() || !terminal.get().active()) {
             return RuleEvaluationResult.reject(

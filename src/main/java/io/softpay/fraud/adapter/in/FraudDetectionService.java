@@ -1,20 +1,21 @@
-package io.softpay.fraud.service;
+package io.softpay.fraud.adapter.in;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.softpay.fraud.config.FraudRulesProperties;
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.domain.TransactionContext;
-import io.softpay.fraud.dto.RejectionStatus;
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.dto.TransactionEvaluationResponse;
-import io.softpay.fraud.repository.TransactionStateRepository;
+import io.softpay.fraud.model.enums.RejectionStatus;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.records.data.TransactionContext;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.model.records.response.TransactionEvaluationResponse;
+import io.softpay.fraud.persistence.repository.TransactionStateRepository;
+import io.softpay.fraud.port.in.FraudDetectionIn;
 import io.softpay.fraud.rule.FraudRule;
+import io.softpay.fraud.utils.CardSecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,32 +27,31 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class FraudDetectionService {
+public class FraudDetectionService implements FraudDetectionIn {
 
     private final List<FraudRule> rules;
-    private final CurrencyConversionService currencyConversionService;
     private final TransactionStateRepository transactionStateRepository;
     private final FraudRulesProperties properties;
     private final MeterRegistry meterRegistry;
     private final Clock clock;
 
+    @Override
     public TransactionEvaluationResponse evaluate(TransactionEvaluationRequest request) {
         Timer.Sample sample = Timer.start(meterRegistry);
         Instant now = clock.instant();
 
         try {
-            BigDecimal amountEur = currencyConversionService.convertToEur(request.amount(), request.currency());
             String hashedPan = CardSecurityUtils.hashPan(request.cardNumber(), properties.salt());
 
             TransactionContext context = new TransactionContext(
                     request,
-                    amountEur,
+                    request.amount(),
                     hashedPan,
                     now
             );
 
-            log.info("Evaluating transaction: terminalId={}, threatScore={}, amountEur={}, maskedPan={}",
-                    request.terminalId(), request.terminalThreatScore(), amountEur, CardSecurityUtils.maskPan(request.cardNumber()));
+            log.info("Evaluating transaction: terminalId={}, threatScore={}, amount={}, currency={}, maskedPan={}",
+                    request.terminalId(), request.terminalThreatScore(), request.amount(), request.currency(), CardSecurityUtils.maskPan(request.cardNumber()));
 
             int totalScoreContribution = 0;
             boolean hasHardReject = false;

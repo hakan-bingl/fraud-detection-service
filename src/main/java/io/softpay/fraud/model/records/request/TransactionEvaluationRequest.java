@@ -1,6 +1,6 @@
-package io.softpay.fraud.dto;
+package io.softpay.fraud.model.records.request;
 
-import io.softpay.fraud.service.CardSecurityUtils;
+import io.softpay.fraud.utils.CardSecurityUtils;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

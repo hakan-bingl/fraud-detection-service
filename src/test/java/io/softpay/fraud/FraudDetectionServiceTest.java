@@ -1,16 +1,14 @@
 package io.softpay.fraud;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.softpay.fraud.adapter.in.FraudDetectionService;
 import io.softpay.fraud.config.FraudRulesProperties;
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.dto.RejectionStatus;
-import io.softpay.fraud.dto.TransactionEvaluationRequest;
-import io.softpay.fraud.dto.TransactionEvaluationResponse;
-import io.softpay.fraud.repository.InMemorySlidingWindowRepository;
-import io.softpay.fraud.repository.TransactionStateRepository;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.enums.RejectionStatus;
+import io.softpay.fraud.model.records.request.TransactionEvaluationRequest;
+import io.softpay.fraud.model.records.response.TransactionEvaluationResponse;
+import io.softpay.fraud.persistence.repository.TransactionStateRepository;
 import io.softpay.fraud.rule.FraudRule;
-import io.softpay.fraud.service.CurrencyConversionService;
-import io.softpay.fraud.service.FraudDetectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,15 +28,13 @@ class FraudDetectionServiceTest {
 
     private SimpleMeterRegistry meterRegistry;
     private TransactionStateRepository stateRepository;
-    private CurrencyConversionService currencyService;
     private FraudRulesProperties properties;
     private Clock clock;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        stateRepository = new InMemorySlidingWindowRepository();
-        currencyService = new CurrencyConversionService();
+        stateRepository = mock(TransactionStateRepository.class);
         properties = new FraudRulesProperties(
                 70,
                 "test-salt-123",
@@ -58,7 +54,6 @@ class FraudDetectionServiceTest {
 
         FraudDetectionService service = new FraudDetectionService(
                 List.of(passingRule),
-                currencyService,
                 stateRepository,
                 properties,
                 meterRegistry,
@@ -96,7 +91,6 @@ class FraudDetectionServiceTest {
 
         FraudDetectionService service = new FraudDetectionService(
                 List.of(rule1, rule2),
-                currencyService,
                 stateRepository,
                 properties,
                 meterRegistry,
@@ -134,7 +128,6 @@ class FraudDetectionServiceTest {
 
         FraudDetectionService service = new FraudDetectionService(
                 List.of(rule1, rule2),
-                currencyService,
                 stateRepository,
                 properties,
                 meterRegistry,

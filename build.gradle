@@ -26,6 +26,16 @@ dependencies {
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
 
+    // Polyglot Persistence: Valkey (Redis-compatible) for Sliding Windows & High-Speed Caching
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // Polyglot Persistence: PostgreSQL & Flyway for Relational Master Data & Ledger
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'com.h2database:h2'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'

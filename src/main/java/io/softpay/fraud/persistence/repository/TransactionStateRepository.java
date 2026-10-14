@@ -1,4 +1,4 @@
-package io.softpay.fraud.repository;
+package io.softpay.fraud.persistence.repository;
 
 import java.time.Instant;
 

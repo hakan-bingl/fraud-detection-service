@@ -1,4 +1,4 @@
-package io.softpay.fraud.repository;
+package io.softpay.fraud.model.records.data;
 
 public record Terminal(
         String terminalId,

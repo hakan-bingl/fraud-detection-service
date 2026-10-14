@@ -1,9 +1,9 @@
 package io.softpay.fraud.rule;
 
 import io.softpay.fraud.config.FraudRulesProperties;
-import io.softpay.fraud.domain.RuleEvaluationResult;
-import io.softpay.fraud.domain.TransactionContext;
-import io.softpay.fraud.repository.TransactionStateRepository;
+import io.softpay.fraud.model.records.data.RuleEvaluationResult;
+import io.softpay.fraud.model.records.data.TransactionContext;
+import io.softpay.fraud.persistence.repository.TransactionStateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
